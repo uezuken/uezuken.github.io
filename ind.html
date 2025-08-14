@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>作業員体調管理アプリ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        .container {
+            max-width: 800px;
+        }
+        .card {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .accordion-header {
+            cursor: pointer;
+            user-select: none;
+        }
+        .accordion-content {
+            display: none;
+        }
+        .accordion-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="container mx-auto mt-8 bg-white p-6 rounded-xl card">
+        <!-- アプリケーションの基本情報とタイトル -->
+        <header class="text-center mb-6 relative">
+            <div id="site-info" class="absolute top-0 left-0 text-left text-gray-600 text-sm">
+                <p><span class="font-bold">元請会社:</span> <span id="display-primary-contractor">未設定</span></p>
+                <p><span class="font-bold">現場名:</span> <span id="display-site-name">未設定</span></p>
+            </div>
+            <h1 class="text-2xl font-bold text-gray-800">作業員体調管理アプリ</h1>
+            <p class="text-gray-600 mt-2">熱中症対策のための体調管理チェックにご協力ください。</p>
+        </header>
+
+        <!-- 各ビューのコンテナ -->
+        <div id="app-container">
+            <!-- ログイン画面 -->
+            <div id="login-view" class="view">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">ログイン方法を選択</h2>
+                <div class="flex flex-col items-center space-y-4">
+                    <button id="show-register-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                        新規登録（初回のみ）
+                    </button>
+                    <button id="show-health-check-btn" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                        体調チェック
+                    </button>
+                    <button id="show-admin-login-btn" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">
+                        管理者画面
+                    </button>
+                </div>
+            </div>
+
+            <!-- 新規登録画面 -->
+            <div id="register-view" class="view hidden">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">新規登録</h2>
+                <form id="register-form" class="space-y-4">
+                    <div>
+                        <label for="primary-company-select-register" class="block text-sm font-medium text-gray-700">一次会社名</label>
+                        <select id="primary-company-select-register" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2">
+                        </select>
+                        <input type="text" id="primary-company-input" placeholder="上記にない場合は入力" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 hidden">
+                    </div>
+                    <div>
+                        <label for="contracting-company" class="block text-sm font-medium text-gray-700">勤め先会社名</label>
+                        <input type="text" id="contracting-company" name="contracting-company" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2">
+                    </div>
+                    <div>
+                        <label for="worker-name" class="block text-sm font-medium text-gray-700">名前</label>
+                        <input type="text" id="worker-name" name="worker-name" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2">
+                    </div>
+                    <div>
+                        <label for="worker-age" class="block text-sm font-medium text-gray-700">年齢</label>
+                        <input type="number" id="worker-age" name="worker-age" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">登録</button>
+                    <button type="button" id="back-to-login-from-register" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition duration-200">戻る</button>
+                </form>
+            </div>
+
+            <!-- 体調チェック画面 -->
+            <div id="health-check-view" class="view hidden">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">体調チェック</h2>
+                <p class="text-sm text-gray-500 mb-4">
+                    以下の選択肢から、ご自身の情報を選択してください。
+                </p>
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <label for="primary-company-select" class="block text-sm font-medium text-gray-700">一次会社名</label>
+                        <select id="primary-company-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"></select>
+                    </div>
+                    <div>
+                        <label for="contracting-company-select" class="block text-sm font-medium text-gray-700">勤め先会社名</label>
+                        <select id="contracting-company-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" disabled></select>
+                    </div>
+                    <div>
+                        <label for="worker-select" class="block text-sm font-medium text-gray-700">名前</label>
+                        <select id="worker-select" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" disabled></select>
+                    </div>
+                </div>
+
+                <div class="space-x-2 mb-6">
+                    <button id="morning-check-btn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200" disabled>午前チェック</button>
+                    <button id="afternoon-check-btn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200" disabled>午後チェック</button>
+                </div>
+                <form id="health-check-form" class="space-y-4 hidden">
+                    <h3 id="check-time-title" class="text-lg font-bold text-gray-800"></h3>
+                    <div id="question-list" class="space-y-4">
+                        <!-- 質問項目はここに動的に生成されます -->
+                    </div>
+                    <button type="submit" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">送信</button>
+                </form>
+                <button type="button" id="back-to-login-from-health" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mt-4 transition duration-200">戻る</button>
+            </div>
+
+            <!-- 管理者ログイン画面 -->
+            <div id="admin-login-view" class="view hidden">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">管理者ログイン</h2>
+                <form id="admin-login-form" class="space-y-4">
+                    <div>
+                        <label for="admin-password" class="block text-sm font-medium text-gray-700">パスワード</label>
+                        <input type="password" id="admin-password" name="admin-password" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2">
+                    </div>
+                    <button type="submit" class="w-full bg-gray-500 hover:bg-gray-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">ログイン</button>
+                    <button type="button" id="back-to-login-from-admin-login" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition duration-200">戻る</button>
+                </form>
+            </div>
+
+            <!-- 管理者画面 -->
+            <div id="admin-view" class="view hidden">
+                <h2 class="text-xl font-semibold mb-4 text-gray-700">管理者パネル</h2>
+                
+                <div class="space-y-6">
+                    <!-- 1. 管理者パスワードの変更 -->
+                    <div class="accordion-item border rounded-lg overflow-hidden">
+                        <div class="accordion-header bg-gray-100 p-4 font-semibold text-gray-800 flex justify-between items-center">
+                            <span>1. 管理者パスワードの変更</span>
+                            <span>&#9660;</span>
+                        </div>
+                        <div class="accordion-content p-4">
+                            <form id="admin-password-form" class="space-y-2">
+                                <div>
+                                    <label for="new-admin-password" class="block text-sm font-medium text-gray-700">新しいパスワード</label>
+                                    <input type="password" id="new-admin-password" name="new-admin-password" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                                </div>
+                                <button type="submit" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">パスワードを変更</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- 2. 基本情報の管理 -->
+                    <div class="accordion-item border rounded-lg overflow-hidden">
+                        <div class="accordion-header bg-gray-100 p-4 font-semibold text-gray-800 flex justify-between items-center">
+                            <span>2. 基本情報の管理</span>
+                            <span>&#9660;</span>
+                        </div>
+                        <div class="accordion-content p-4">
+                            <form id="site-info-form" class="space-y-2">
+                                <div>
+                                    <label for="admin-primary-contractor" class="block text-sm font-medium text-gray-700">元請会社名</label>
+                                    <input type="text" id="admin-primary-contractor" name="admin-primary-contractor" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                                </div>
+                                <div>
+                                    <label for="admin-site-name" class="block text-sm font-medium text-gray-700">現場名</label>
+                                    <input type="text" id="admin-site-name" name="admin-site-name" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                                </div>
+                                <button type="submit" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">基本情報を保存</button>
+                            </form>
+                        </div>
+                    </div>
+                
+                    <!-- 3. 一次会社名の管理 -->
+                    <div class="accordion-item border rounded-lg overflow-hidden">
+                        <div class="accordion-header bg-gray-100 p-4 font-semibold text-gray-800 flex justify-between items-center">
+                            <span>3. 一次会社名の管理</span>
+                            <span>&#9660;</span>
+                        </div>
+                        <div class="accordion-content p-4">
+                            <form id="add-primary-company-form" class="flex space-x-2 mb-4">
+                                <input type="text" id="add-primary-company-input" placeholder="新しい一次会社名" class="flex-grow rounded-md border-gray-300 shadow-sm p-2">
+                                <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">追加</button>
+                            </form>
+                            <ul id="primary-company-list" class="mt-2 space-y-2"></ul>
+                        </div>
+                    </div>
+
+                    <!-- 4. 質問項目の管理 -->
+                    <div class="accordion-item border rounded-lg overflow-hidden">
+                        <div class="accordion-header bg-gray-100 p-4 font-semibold text-gray-800 flex justify-between items-center">
+                            <span>4. 質問項目の管理</span>
+                            <span>&#9660;</span>
+                        </div>
+                        <div class="accordion-content p-4">
+                            <div class="space-y-4">
+                                <div>
+                                    <h4 class="font-semibold text-gray-700 mb-1">午前中の質問項目</h4>
+                                    <form id="add-morning-question-form" class="flex space-x-2">
+                                        <input type="text" id="morning-question-text" placeholder="新しい質問" class="flex-grow rounded-md border-gray-300 shadow-sm p-2">
+                                        <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">追加</button>
+                                    </form>
+                                    <ul id="morning-question-list" class="mt-2 space-y-2"></ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-gray-700 mb-1">午後の質問項目</h4>
+                                    <form id="add-afternoon-question-form" class="flex space-x-2">
+                                        <input type="text" id="afternoon-question-text" placeholder="新しい質問" class="flex-grow rounded-md border-gray-300 shadow-sm p-2">
+                                        <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">追加</button>
+                                    </form>
+                                    <ul id="afternoon-question-list" class="mt-2 space-y-2"></ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 5. 作業員名簿一覧 -->
+                    <div class="accordion-item border rounded-lg overflow-hidden">
+                        <div class="accordion-header bg-gray-100 p-4 font-semibold text-gray-800 flex justify-between items-center">
+                            <span>5. 作業員名簿一覧</span>
+                            <span>&#9660;</span>
+                        </div>
+                        <div class="accordion-content p-4">
+                            <div class="overflow-x-auto rounded-lg">
+                                <table id="workers-table" class="min-w-full divide-y divide-gray-200">
+                                    <thead class="bg-gray-50">
+                                        <tr>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">一次会社名</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">勤め先会社名</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">名前</th>
+                                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="workers-table-body" class="bg-white divide-y divide-gray-200">
+                                        <!-- 作業員データはここに動的に追加されます -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr class="my-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4">体調チェック記録の可視化</h3>
+                <div class="flex justify-center mb-6">
+                    <canvas id="health-chart" class="w-full h-80"></canvas>
+                </div>
+
+                <hr class="my-6">
+
+                <h3 class="text-lg font-bold text-gray-800 mb-4">体調チェック記録</h3>
+                <div class="mb-4">
+                    <button id="export-csv-btn" class="bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition duration-200">CSVで出力</button>
+                </div>
+                <div class="overflow-x-auto rounded-lg">
+                    <table id="data-table" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">日付</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">時間帯</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">名前</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">一次会社</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">勤め先</th>
+                                <!-- 質問項目ヘッダーはここに動的に追加 -->
+                            </tr>
+                        </thead>
+                        <tbody id="data-table-body" class="bg-white divide-y divide-gray-200">
+                            <!-- データはここに動的に追加されます -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <hr class="my-6">
+                <button type="button" id="back-to-login-from-admin" class="w-full bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg mt-6 transition duration-200">ログアウト</button>
+            </div>
+            
+            <!-- メッセージボックス -->
+            <div id="message-box" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center p-4">
+                <div class="bg-white p-6 rounded-lg text-center shadow-lg">
+                    <p id="message-text" class="text-gray-800 mb-4"></p>
+                    <button id="close-message-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">OK</button>
+                </div>
+            </div>
+
+            <!-- Gemini アドバイスモーダル -->
+            <div id="gemini-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center p-4">
+                <div class="bg-white p-6 rounded-lg text-center shadow-lg w-full max-w-md">
+                    <h3 class="text-xl font-bold mb-4">AI 健康アドバイス ✨</h3>
+                    <div id="gemini-advice-content" class="text-gray-700 mb-4 text-left whitespace-pre-wrap">
+                        <div class="flex justify-center items-center">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                    <button id="close-gemini-modal-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg">閉じる</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // アプリケーションのグローバル状態を管理するオブジェクト
+        const appData = {
+            adminPassword: 'admin',
+            primaryContractor: '',
+            siteName: '',
+            primaryCompanies: [], // 一次会社名のリスト
+            workers: [],
+            questions: {
+                morning: ["心筋梗塞、狭⼼症などにかかったことがある。", "現在、体調不良や倦怠感はない。", "睡眠は十分にとれた。"],
+                afternoon: ["午前中に体調不良はなかった。", "現在、めまいや吐き気などの症状はない。"]
+            },
+            records: []
+        };
+
+        // DOM要素の参照
+        const views = {
+            login: document.getElementById('login-view'),
+            register: document.getElementById('register-view'),
+            healthCheck: document.getElementById('health-check-view'),
+            adminLogin: document.getElementById('admin-login-view'),
+            admin: document.getElementById('admin-view'),
+        };
+
+        const elements = {
+            adminPasswordForm: document.getElementById('admin-password-form'),
+            newAdminPasswordInput: document.getElementById('new-admin-password'),
+            siteInfoForm: document.getElementById('site-info-form'),
+            adminPrimaryContractorInput: document.getElementById('admin-primary-contractor'),
+            adminSiteNameInput: document.getElementById('admin-site-name'),
+            displayPrimaryContractor: document.getElementById('display-primary-contractor'),
+            displaySiteName: document.getElementById('display-site-name'),
+            registerForm: document.getElementById('register-form'),
+            primaryCompanySelectRegister: document.getElementById('primary-company-select-register'),
+            primaryCompanyInputRegister: document.getElementById('primary-company-input'),
+            contractingCompanyInput: document.getElementById('contracting-company'),
+            workerNameInput: document.getElementById('worker-name'),
+            workerAgeInput: document.getElementById('worker-age'),
+            primaryCompanySelect: document.getElementById('primary-company-select'),
+            contractingCompanySelect: document.getElementById('contracting-company-select'),
+            workerSelect: document.getElementById('worker-select'),
+            morningCheckBtn: document.getElementById('morning-check-btn'),
+            afternoonCheckBtn: document.getElementById('afternoon-check-btn'),
+            healthCheckForm: document.getElementById('health-check-form'),
+            questionList: document.getElementById('question-list'),
+            checkTimeTitle: document.getElementById('check-time-title'),
+            adminLoginForm: document.getElementById('admin-login-form'),
+            adminPasswordInput: document.getElementById('admin-password'),
+            addPrimaryCompanyForm: document.getElementById('add-primary-company-form'),
+            addPrimaryCompanyInput: document.getElementById('add-primary-company-input'),
+            primaryCompanyList: document.getElementById('primary-company-list'),
+            addMorningQuestionForm: document.getElementById('add-morning-question-form'),
+            morningQuestionList: document.getElementById('morning-question-list'),
+            addAfternoonQuestionForm: document.getElementById('add-afternoon-question-form'),
+            afternoonQuestionList: document.getElementById('afternoon-question-list'),
+            dataTable: document.getElementById('data-table'),
+            dataTableBody: document.getElementById('data-table-body'),
+            exportCsvBtn: document.getElementById('export-csv-btn'),
+            messageBox: document.getElementById('message-box'),
+            messageText: document.getElementById('message-text'),
+            closeMessageBtn: document.getElementById('close-message-btn'),
+            workersTableBody: document.getElementById('workers-table-body'),
+            healthChartCanvas: document.getElementById('health-chart'),
+            geminiModal: document.getElementById('gemini-modal'),
+            geminiAdviceContent: document.getElementById('gemini-advice-content'),
+            closeGeminiModalBtn: document.getElementById('close-gemini-modal-btn'),
+        };
+
+        let currentWorkerId = null;
+
+        // データの保存と読み込み
+        const saveData = () => {
+            localStorage.setItem('healthCheckAppData', JSON.stringify(appData));
+        };
+
+        const loadData = () => {
+            const storedData = localStorage.getItem('healthCheckAppData');
+            if (storedData) {
+                Object.assign(appData, JSON.parse(storedData));
+            }
+        };
+
+        // メッセージボックスを表示
+        const showMessage = (message) => {
+            elements.messageText.textContent = message;
+            elements.messageBox.classList.remove('hidden');
+        };
+
+        // メッセージボックスを非表示
+        const hideMessage = () => {
+            elements.messageBox.classList.add('hidden');
+        };
+        
+        // Gemini アドバイスモーダルを表示
+        const showGeminiAdviceModal = (content) => {
+            elements.geminiAdviceContent.innerHTML = content;
+            elements.geminiModal.classList.remove('hidden');
+        };
+
+        // Gemini アドバイスモーダルを非表示
+        const hideGeminiAdviceModal = () => {
+            elements.geminiModal.classList.add('hidden');
+        };
+
+        // ビューの切り替え
+        const showView = (viewName) => {
+            Object.values(views).forEach(view => view.classList.add('hidden'));
+            views[viewName].classList.remove('hidden');
+            
+            // 基本情報を表示
+            elements.displayPrimaryContractor.textContent = appData.primaryContractor || '未設定';
+            elements.displaySiteName.textContent = appData.siteName || '未設定';
+
+            if (viewName === 'healthCheck') {
+                updatePrimaryCompanySelect();
+                elements.healthCheckForm.classList.add('hidden'); // フォームを非表示に
+                currentWorkerId = null; // 選択をリセット
+            } else if (viewName === 'register') {
+                updateRegisterPrimaryCompanySelect(); // 新規登録画面のセレクトボックスを更新
+            } else if (viewName === 'admin') {
+                renderWorkersTable(); // 作業員名簿を更新
+                renderDataTable();
+                updateAdminPrimaryCompanyList();
+                updateAdminQuestionList('morning');
+                updateAdminQuestionList('afternoon');
+                renderChart();
+                elements.adminPrimaryContractorInput.value = appData.primaryContractor;
+                elements.adminSiteNameInput.value = appData.siteName;
+            }
+        };
+
+        // 新規登録画面の一次会社セレクトボックスを更新
+        const updateRegisterPrimaryCompanySelect = () => {
+            elements.primaryCompanySelectRegister.innerHTML = '<option value="">一次会社名を選択</option>';
+            appData.primaryCompanies.forEach(company => {
+                const option = document.createElement('option');
+                option.value = company;
+                option.textContent = company;
+                elements.primaryCompanySelectRegister.appendChild(option);
+            });
+            const otherOption = document.createElement('option');
+            otherOption.value = 'other';
+            otherOption.textContent = '上記にない場合は直接入力';
+            elements.primaryCompanySelectRegister.appendChild(otherOption);
+            elements.primaryCompanyInputRegister.classList.add('hidden'); // 入力欄を初期状態では非表示
+        };
+        
+        // 体調チェック画面の一次会社選択リストの更新
+        const updatePrimaryCompanySelect = () => {
+            const primaryCompanies = [...new Set(appData.workers.map(w => w.primaryCompany))];
+            elements.primaryCompanySelect.innerHTML = '<option value="">一次会社名を選択</option>';
+            primaryCompanies.forEach(company => {
+                const option = document.createElement('option');
+                option.value = company;
+                option.textContent = company;
+                elements.primaryCompanySelect.appendChild(option);
+            });
+            // 選択肢をリセット
+            elements.contractingCompanySelect.innerHTML = '<option value="">勤め先会社名を選択</option>';
+            elements.workerSelect.innerHTML = '<option value="">名前を選択</option>';
+            elements.contractingCompanySelect.disabled = true;
+            elements.workerSelect.disabled = true;
+        };
+
+        // 勤め先会社選択リストの更新
+        const updateContractingCompanySelect = (primaryCompany) => {
+            const filteredWorkers = appData.workers.filter(w => w.primaryCompany === primaryCompany);
+            const contractingCompanies = [...new Set(filteredWorkers.map(w => w.contractingCompany))];
+            elements.contractingCompanySelect.innerHTML = '<option value="">勤め先会社名を選択</option>';
+            contractingCompanies.forEach(company => {
+                const option = document.createElement('option');
+                option.value = company;
+                option.textContent = company;
+                elements.contractingCompanySelect.appendChild(option);
+            });
+            elements.contractingCompanySelect.disabled = false;
+        };
+        
+        // 作業員選択リストの更新
+        const updateWorkerSelect = (primaryCompany, contractingCompany) => {
+            const filteredWorkers = appData.workers.filter(w => w.primaryCompany === primaryCompany && w.contractingCompany === contractingCompany);
+            elements.workerSelect.innerHTML = '<option value="">名前を選択</option>';
+            filteredWorkers.forEach(worker => {
+                const option = document.createElement('option');
+                option.value = worker.id;
+                option.textContent = worker.name;
+                elements.workerSelect.appendChild(option);
+            });
+            elements.workerSelect.disabled = false;
+        };
+
+        // 質問リストを動的に生成
+        const renderQuestions = (timeOfDay) => {
+            elements.questionList.innerHTML = '';
+            const questions = appData.questions[timeOfDay];
+            if (questions && questions.length > 0) {
+                questions.forEach((question, index) => {
+                    const questionDiv = document.createElement('div');
+                    questionDiv.className = 'bg-gray-100 p-4 rounded-md';
+                    questionDiv.innerHTML = `
+                        <p class="font-medium text-gray-800 mb-2">${index + 1}. ${question}</p>
+                        <div class="flex space-x-4">
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="q${index}" value="〇" required class="form-radio text-green-500">
+                                <span class="ml-2 text-gray-700">〇</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="q${index}" value="✕" required class="form-radio text-red-500">
+                                <span class="ml-2 text-gray-700">✕</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="q${index}" value="/" required class="form-radio text-gray-500">
+                                <span class="ml-2 text-gray-700">/</span>
+                            </label>
+                        </div>
+                    `;
+                    elements.questionList.appendChild(questionDiv);
+                });
+                elements.healthCheckForm.classList.remove('hidden');
+            } else {
+                elements.questionList.innerHTML = '<p class="text-gray-500">質問項目が登録されていません。</p>';
+                elements.healthCheckForm.classList.add('hidden');
+            }
+        };
+        
+        // 管理者画面の一次会社名リストを更新
+        const updateAdminPrimaryCompanyList = () => {
+            elements.primaryCompanyList.innerHTML = '';
+            appData.primaryCompanies.forEach((company, index) => {
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center bg-gray-100 p-2 rounded-md';
+                li.innerHTML = `
+                    <span class="text-gray-800">${company}</span>
+                    <button data-index="${index}" class="delete-primary-company-btn text-red-500 hover:text-red-700 transition duration-200">削除</button>
+                `;
+                elements.primaryCompanyList.appendChild(li);
+            });
+        };
+
+        // 管理者画面の質問リストを更新
+        const updateAdminQuestionList = (timeOfDay) => {
+            const listElement = timeOfDay === 'morning' ? elements.morningQuestionList : elements.afternoonQuestionList;
+            listElement.innerHTML = '';
+            appData.questions[timeOfDay].forEach((question, index) => {
+                const li = document.createElement('li');
+                li.className = 'flex justify-between items-center bg-gray-100 p-2 rounded-md';
+                li.innerHTML = `
+                    <span class="text-gray-800">${question}</span>
+                    <button data-index="${index}" data-time="${timeOfDay}" class="delete-question-btn text-red-500 hover:text-red-700 transition duration-200">削除</button>
+                `;
+                listElement.appendChild(li);
+            });
+        };
+        
+        // 作業員名簿テーブルを更新
+        const renderWorkersTable = () => {
+            elements.workersTableBody.innerHTML = '';
+            appData.workers.forEach(worker => {
+                const row = document.createElement('tr');
+                row.className = 'bg-white';
+                row.innerHTML = `
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${worker.primaryCompany}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${worker.contractingCompany}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${worker.name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button data-worker-id="${worker.id}" class="edit-worker-btn text-indigo-600 hover:text-indigo-900 mr-2">編集</button>
+                        <button data-worker-id="${worker.id}" class="delete-worker-btn text-red-600 hover:text-red-900">削除</button>
+                    </td>
+                `;
+                elements.workersTableBody.appendChild(row);
+            });
+        };
+
+        // データテーブルを更新
+        const renderDataTable = () => {
+            elements.dataTableBody.innerHTML = '';
+            
+            // ヘッダーの生成
+            const headerRow = elements.dataTable.querySelector('thead tr');
+            const staticHeaders = ['日付', '時間帯', '名前', '一次会社', '勤め先'];
+            const allQuestions = [...new Set([...appData.questions.morning, ...appData.questions.afternoon])];
+            
+            headerRow.innerHTML = '';
+            staticHeaders.forEach(header => {
+                const th = document.createElement('th');
+                th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                th.textContent = header;
+                headerRow.appendChild(th);
+            });
+            allQuestions.forEach(question => {
+                const th = document.createElement('th');
+                th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                th.textContent = question;
+                headerRow.appendChild(th);
+            });
+
+            // レコードの生成
+            appData.records.forEach(record => {
+                const worker = appData.workers.find(w => w.id === record.workerId);
+                if (!worker) return;
+
+                const row = document.createElement('tr');
+                row.className = 'bg-white';
+                
+                const cellClass = 'px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900';
+
+                const dateCell = document.createElement('td');
+                dateCell.className = cellClass;
+                dateCell.textContent = record.date;
+                row.appendChild(dateCell);
+
+                const timeCell = document.createElement('td');
+                timeCell.className = cellClass;
+                timeCell.textContent = record.timeOfDay === 'morning' ? '午前' : '午後';
+                row.appendChild(timeCell);
+                
+                const nameCell = document.createElement('td');
+                nameCell.className = cellClass;
+                nameCell.textContent = worker.name;
+                row.appendChild(nameCell);
+
+                const primaryCompanyCell = document.createElement('td');
+                primaryCompanyCell.className = cellClass;
+                primaryCompanyCell.textContent = worker.primaryCompany;
+                row.appendChild(primaryCompanyCell);
+                
+                const contractingCompanyCell = document.createElement('td');
+                contractingCompanyCell.className = cellClass;
+                contractingCompanyCell.textContent = worker.contractingCompany;
+                row.appendChild(contractingCompanyCell);
+                
+                allQuestions.forEach(questionText => {
+                    const answerCell = document.createElement('td');
+                    answerCell.className = cellClass;
+                    const answer = record.answers[questionText];
+                    answerCell.textContent = answer || '-'; // 回答がない場合は'-'を表示
+                    row.appendChild(answerCell);
+                });
+                
+                elements.dataTableBody.appendChild(row);
+            });
+        };
+
+        // グラフ描画
+        const renderChart = () => {
+            const ctx = elements.healthChartCanvas.getContext('2d');
+            
+            // 既存のグラフをクリア
+            if (window.myChart) {
+                window.myChart.destroy();
+            }
+
+            // 日付ごとの回答数を集計
+            const dailyCounts = {};
+            appData.records.forEach(record => {
+                const date = record.date;
+                if (!dailyCounts[date]) {
+                    dailyCounts[date] = { '〇': 0, '✕': 0, '/': 0 };
+                }
+                const allAnswers = Object.values(record.answers);
+                allAnswers.forEach(answer => {
+                    if (dailyCounts[date][answer] !== undefined) {
+                        dailyCounts[date][answer]++;
+                    }
+                });
+            });
+
+            const labels = Object.keys(dailyCounts).sort();
+            const dataO = labels.map(date => dailyCounts[date]['〇']);
+            const dataX = labels.map(date => dailyCounts[date]['✕']);
+
+            window.myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '〇 (良好)',
+                        data: dataO,
+                        backgroundColor: 'rgba(52, 211, 153, 0.7)',
+                        borderColor: 'rgba(52, 211, 153, 1)',
+                        borderWidth: 1
+                    }, {
+                        label: '✕ (不良)',
+                        data: dataX,
+                        backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                        borderColor: 'rgba(239, 68, 68, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '回答数'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        title: {
+                            display: true,
+                            text: '日ごとの体調チェック記録'
+                        }
+                    }
+                }
+            });
+        };
+        
+        // Gemini API呼び出し関数
+        const getGeminiAdvice = async (answers, workerName) => {
+            const isUnwell = Object.values(answers).some(answer => answer === '✕');
+            const prompt = isUnwell
+                ? `${workerName}さんの体調チェック結果は「✕」が含まれています。熱中症対策と体調管理に関する具体的なアドバイスを、500文字以内で簡潔に箇条書きで教えてください。`
+                : `${workerName}さんの体調チェック結果は良好です。今後の熱中症対策として、気をつけるべきことを500文字以内で簡潔に箇条書きで教えてください。`;
+
+            elements.geminiAdviceContent.innerHTML = '<div class="flex justify-center items-center"><div class="loading-spinner"></div></div>';
+            showGeminiAdviceModal(elements.geminiAdviceContent.innerHTML);
+
+            let retries = 0;
+            const maxRetries = 5;
+            const delay = (ms) => new Promise(res => setTimeout(res, ms));
+
+            while (retries < maxRetries) {
+                try {
+                    const apiKey = "";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+                    const payload = {
+                        contents: [{
+                            parts: [{ text: prompt }]
+                        }]
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (response.status === 429) {
+                        retries++;
+                        await delay(1000 * Math.pow(2, retries)); // Exponential backoff
+                        continue;
+                    }
+
+                    const result = await response.json();
+                    if (result.candidates && result.candidates.length > 0) {
+                        elements.geminiAdviceContent.textContent = result.candidates[0].content.parts[0].text;
+                        break;
+                    } else {
+                        throw new Error('No candidates in response');
+                    }
+                } catch (error) {
+                    console.error('Gemini API call failed:', error);
+                    elements.geminiAdviceContent.textContent = 'アドバイスの生成に失敗しました。時間をおいて再度お試しください。';
+                    break;
+                }
+            }
+            if (retries === maxRetries) {
+                elements.geminiAdviceContent.textContent = 'アドバイスの生成に失敗しました。時間をおいて再度お試しください。';
+            }
+        };
+
+        // イベントリスナーの設定
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+            showView('login');
+            elements.closeGeminiModalBtn.addEventListener('click', hideGeminiAdviceModal);
+
+            // アコーディオンのイベントリスナーを設定
+            document.querySelectorAll('.accordion-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const accordionContent = header.nextElementSibling;
+                    const accordionIcon = header.querySelector('span:last-child');
+                    
+                    const isActive = accordionContent.classList.contains('active');
+
+                    // 他のアコーディオンを閉じる
+                    document.querySelectorAll('.accordion-content').forEach(content => {
+                        content.classList.remove('active');
+                        content.previousElementSibling.querySelector('span:last-child').innerHTML = '&#9660;';
+                    });
+
+                    if (!isActive) {
+                        accordionContent.classList.add('active');
+                        accordionIcon.innerHTML = '&#9650;';
+                    } else {
+                        accordionIcon.innerHTML = '&#9660;';
+                    }
+                });
+            });
+        });
+
+        // ボタンクリックイベント
+        document.getElementById('show-register-btn').addEventListener('click', () => showView('register'));
+        document.getElementById('show-health-check-btn').addEventListener('click', () => showView('healthCheck'));
+        document.getElementById('show-admin-login-btn').addEventListener('click', () => {
+            showView('adminLogin');
+            elements.adminPrimaryContractorInput.value = appData.primaryContractor;
+            elements.adminSiteNameInput.value = appData.siteName;
+        });
+
+        document.getElementById('back-to-login-from-register').addEventListener('click', () => showView('login'));
+        document.getElementById('back-to-login-from-health').addEventListener('click', () => showView('login'));
+        document.getElementById('back-to-login-from-admin-login').addEventListener('click', () => showView('login'));
+        document.getElementById('back-to-login-from-admin').addEventListener('click', () => showView('login'));
+
+        elements.closeMessageBtn.addEventListener('click', hideMessage);
+
+        // 新規登録フォーム
+        elements.registerForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const form = e.target;
+            let primaryCompany = elements.primaryCompanySelectRegister.value;
+            if (primaryCompany === 'other') {
+                primaryCompany = elements.primaryCompanyInputRegister.value;
+            }
+            if (!primaryCompany || primaryCompany === '一次会社名を選択') {
+                showMessage('一次会社名を入力または選択してください。');
+                return;
+            }
+
+            const contractingCompany = form.querySelector('#contracting-company').value;
+            const workerName = form.querySelector('#worker-name').value;
+
+            // 重複チェック
+            const isDuplicate = appData.workers.some(worker => 
+                worker.primaryCompany === primaryCompany &&
+                worker.contractingCompany === contractingCompany &&
+                worker.name === workerName
+            );
+
+            if (isDuplicate) {
+                showMessage('登録済みです。');
+                return;
+            }
+
+            const newWorker = {
+                id: Date.now().toString(), // IDを文字列として保存
+                primaryCompany: primaryCompany,
+                contractingCompany: contractingCompany,
+                name: workerName,
+                age: form.querySelector('#worker-age').value,
+            };
+            appData.workers.push(newWorker);
+            saveData();
+            showMessage('新規登録が完了しました。');
+            form.reset();
+            showView('login');
+        });
+
+        // 新規登録画面のセレクトボックスの変更イベント
+        elements.primaryCompanySelectRegister.addEventListener('change', (e) => {
+            if (e.target.value === 'other') {
+                elements.primaryCompanyInputRegister.classList.remove('hidden');
+            } else {
+                elements.primaryCompanyInputRegister.classList.add('hidden');
+                elements.primaryCompanyInputRegister.value = '';
+            }
+        });
+
+
+        // 体調チェック画面のセレクトボックスの連動
+        elements.primaryCompanySelect.addEventListener('change', (e) => {
+            const selectedPrimaryCompany = e.target.value;
+            elements.contractingCompanySelect.innerHTML = '<option value="">勤め先会社名を選択</option>';
+            elements.workerSelect.innerHTML = '<option value="">名前を選択</option>';
+            elements.contractingCompanySelect.disabled = true;
+            elements.workerSelect.disabled = true;
+            elements.morningCheckBtn.disabled = true;
+            elements.afternoonCheckBtn.disabled = true;
+            elements.healthCheckForm.classList.add('hidden');
+            if (selectedPrimaryCompany) {
+                updateContractingCompanySelect(selectedPrimaryCompany);
+            }
+        });
+
+        elements.contractingCompanySelect.addEventListener('change', (e) => {
+            const selectedPrimaryCompany = elements.primaryCompanySelect.value;
+            const selectedContractingCompany = e.target.value;
+            elements.workerSelect.innerHTML = '<option value="">名前を選択</option>';
+            elements.workerSelect.disabled = true;
+            elements.morningCheckBtn.disabled = true;
+            elements.afternoonCheckBtn.disabled = true;
+            elements.healthCheckForm.classList.add('hidden');
+            if (selectedContractingCompany) {
+                updateWorkerSelect(selectedPrimaryCompany, selectedContractingCompany);
+            }
+        });
+
+        elements.workerSelect.addEventListener('change', (e) => {
+            const selectedWorkerId = e.target.value;
+            elements.morningCheckBtn.disabled = !selectedWorkerId;
+            elements.afternoonCheckBtn.disabled = !selectedWorkerId;
+            elements.healthCheckForm.classList.add('hidden');
+            currentWorkerId = selectedWorkerId;
+        });
+
+        // 体調チェックフォームの表示
+        elements.morningCheckBtn.addEventListener('click', () => {
+            if (!currentWorkerId) {
+                showMessage('名前を選択してください。');
+                return;
+            }
+            elements.checkTimeTitle.textContent = '午前中の体調チェック';
+            renderQuestions('morning');
+        });
+
+        elements.afternoonCheckBtn.addEventListener('click', () => {
+            if (!currentWorkerId) {
+                showMessage('名前を選択してください。');
+                return;
+            }
+            elements.checkTimeTitle.textContent = '午後の体調チェック';
+            renderQuestions('afternoon');
+        });
+
+        elements.healthCheckForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const form = e.target;
+            const answers = {};
+            const timeOfDay = elements.checkTimeTitle.textContent.includes('午前') ? 'morning' : 'afternoon';
+            const questions = appData.questions[timeOfDay];
+            
+            questions.forEach((question, index) => {
+                const answer = form.elements[`q${index}`].value;
+                answers[question] = answer;
+            });
+            
+            const newRecord = {
+                workerId: currentWorkerId,
+                date: new Date().toLocaleDateString('ja-JP'),
+                timeOfDay: timeOfDay,
+                answers: answers
+            };
+            appData.records.push(newRecord);
+            saveData();
+            showMessage('体調チェックの送信が完了しました。');
+            form.reset();
+            elements.healthCheckForm.classList.add('hidden');
+            renderDataTable();
+            renderChart();
+            
+            // Gemini API呼び出し
+            const worker = appData.workers.find(w => w.id === currentWorkerId);
+            if (worker) {
+                await getGeminiAdvice(answers, worker.name);
+            } else {
+                showView('login');
+            }
+        });
+
+        // 管理者ログインフォーム
+        elements.adminLoginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            if (elements.adminPasswordInput.value === appData.adminPassword) {
+                showView('admin');
+                renderWorkersTable(); // 作業員名簿を更新
+                renderDataTable();
+                updateAdminPrimaryCompanyList();
+                updateAdminQuestionList('morning');
+                updateAdminQuestionList('afternoon');
+                renderChart();
+                elements.adminPrimaryContractorInput.value = appData.primaryContractor;
+                elements.adminSiteNameInput.value = appData.siteName;
+            } else {
+                showMessage('パスワードが違います。');
+            }
+            elements.adminPasswordInput.value = '';
+        });
+
+        // パスワード変更フォーム (管理者)
+        elements.adminPasswordForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newPassword = elements.newAdminPasswordInput.value;
+            if (newPassword) {
+                appData.adminPassword = newPassword;
+                saveData();
+                showMessage('パスワードを変更しました。');
+                elements.newAdminPasswordInput.value = '';
+            }
+        });
+
+        // 基本情報フォーム (管理者)
+        elements.siteInfoForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            appData.primaryContractor = elements.adminPrimaryContractorInput.value;
+            appData.siteName = elements.adminSiteNameInput.value;
+            saveData();
+            showMessage('基本情報を保存しました。');
+            elements.displayPrimaryContractor.textContent = appData.primaryContractor;
+            elements.displaySiteName.textContent = appData.siteName;
+        });
+
+        // 一次会社名追加フォーム (管理者)
+        elements.addPrimaryCompanyForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newCompany = elements.addPrimaryCompanyInput.value;
+            if (newCompany && !appData.primaryCompanies.includes(newCompany)) {
+                appData.primaryCompanies.push(newCompany);
+                saveData();
+                updateAdminPrimaryCompanyList();
+                elements.addPrimaryCompanyInput.value = '';
+            }
+        });
+        
+        // 一次会社名削除ボタンのイベント委譲
+        elements.primaryCompanyList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('delete-primary-company-btn')) {
+                const index = parseInt(e.target.dataset.index);
+                appData.primaryCompanies.splice(index, 1);
+                saveData();
+                updateAdminPrimaryCompanyList();
+            }
+        });
+
+        // 質問項目追加フォーム (午前)
+        elements.addMorningQuestionForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newQuestion = document.getElementById('morning-question-text').value;
+            if (newQuestion) {
+                appData.questions.morning.push(newQuestion);
+                saveData();
+                updateAdminQuestionList('morning');
+                document.getElementById('morning-question-text').value = '';
+                renderDataTable();
+            }
+        });
+
+        // 質問項目追加フォーム (午後)
+        elements.addAfternoonQuestionForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const newQuestion = document.getElementById('afternoon-question-text').value;
+            if (newQuestion) {
+                appData.questions.afternoon.push(newQuestion);
+                saveData();
+                updateAdminQuestionList('afternoon');
+                document.getElementById('afternoon-question-text').value = '';
+                renderDataTable();
+            }
+        });
+        
+        // 質問削除ボタンのイベント委譲
+        document.getElementById('admin-view').addEventListener('click', (e) => {
+            if (e.target.classList.contains('delete-question-btn')) {
+                const index = parseInt(e.target.dataset.index);
+                const timeOfDay = e.target.dataset.time;
+                appData.questions[timeOfDay].splice(index, 1);
+                saveData();
+                updateAdminQuestionList(timeOfDay);
+                renderDataTable();
+            }
+        });
+
+        // CSV出力ボタン
+        elements.exportCsvBtn.addEventListener('click', () => {
+            const staticHeaders = ['日付', '時間帯', '名前', '一次会社', '勤め先'];
+            const allQuestions = [...new Set([...appData.questions.morning, ...appData.questions.afternoon])];
+            const header = [...staticHeaders, ...allQuestions].map(h => `"${h}"`).join(',');
+            
+            const rows = appData.records.map(record => {
+                const worker = appData.workers.find(w => w.id === record.workerId);
+                if (!worker) return;
+
+                const staticData = [
+                    record.date,
+                    record.timeOfDay === 'morning' ? '午前' : '午後',
+                    worker.name,
+                    worker.primaryCompany,
+                    worker.contractingCompany
+                ].map(d => `"${d}"`).join(',');
+
+                const questionData = allQuestions.map(questionText => {
+                    return `"${record.answers[questionText] || '-'}"`;
+                }).join(',');
+
+                return `${staticData},${questionData}`;
+            });
+            
+            const csvContent = "data:text/csv;charset=utf-8," + [header, ...rows].join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "health_records.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        // 作業員名簿の編集・削除
+        elements.workersTableBody.addEventListener('click', (e) => {
+            const workerId = e.target.dataset.workerId;
+            if (!workerId) return;
+
+            // 削除ボタンがクリックされた場合
+            if (e.target.classList.contains('delete-worker-btn')) {
+                const workerIndex = appData.workers.findIndex(worker => worker.id === workerId);
+                if (workerIndex > -1) {
+                    // 確認ダイアログの代わりにカスタムモーダルを使用
+                    const confirmationMessage = `本当に${appData.workers[workerIndex].name}さんの情報を削除しますか？\nこの操作は元に戻せません。`;
+                    const confirmAction = () => {
+                        appData.workers.splice(workerIndex, 1);
+                        // 関連する体調記録も削除
+                        appData.records = appData.records.filter(record => record.workerId !== workerId);
+                        saveData();
+                        renderWorkersTable();
+                        renderDataTable();
+                        renderChart();
+                        hideMessage();
+                    };
+                    showMessage(confirmationMessage);
+                    elements.closeMessageBtn.textContent = 'キャンセル';
+                    const confirmBtn = document.createElement('button');
+                    confirmBtn.textContent = '削除する';
+                    confirmBtn.className = 'bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg ml-2';
+                    confirmBtn.addEventListener('click', confirmAction);
+                    const messageBoxContent = elements.messageBox.querySelector('div');
+                    messageBoxContent.appendChild(confirmBtn);
+                }
+            }
+            // 編集ボタンがクリックされた場合
+            else if (e.target.classList.contains('edit-worker-btn')) {
+                const worker = appData.workers.find(w => w.id === workerId);
+                if (worker) {
+                    // 新規登録フォームにデータをセットして編集画面に切り替える
+                    showView('register');
+                    elements.contractingCompanyInput.value = worker.contractingCompany;
+                    elements.workerNameInput.value = worker.name;
+                    elements.workerAgeInput.value = worker.age;
+
+                    // 一次会社名の選択肢を更新
+                    const primaryCompanyExists = appData.primaryCompanies.includes(worker.primaryCompany);
+                    if (primaryCompanyExists) {
+                        elements.primaryCompanySelectRegister.value = worker.primaryCompany;
+                    } else {
+                        elements.primaryCompanySelectRegister.value = 'other';
+                        elements.primaryCompanyInputRegister.classList.remove('hidden');
+                        elements.primaryCompanyInputRegister.value = worker.primaryCompany;
+                    }
+
+                    // 登録ボタンのテキストを「更新」に変更
+                    const registerBtn = form.querySelector('button[type="submit"]');
+                    registerBtn.textContent = '更新';
+
+                    // フォーム送信時の挙動を編集用に変更
+                    elements.registerForm.removeEventListener('submit', handleRegisterSubmit);
+                    elements.registerForm.addEventListener('submit', (e) => {
+                        e.preventDefault();
+                        let primaryCompany = elements.primaryCompanySelectRegister.value;
+                        if (primaryCompany === 'other') {
+                            primaryCompany = elements.primaryCompanyInputRegister.value;
+                        }
+
+                        // 既存のworkerオブジェクトを更新
+                        worker.primaryCompany = primaryCompany;
+                        worker.contractingCompany = elements.contractingCompanyInput.value;
+                        worker.name = elements.workerNameInput.value;
+                        worker.age = elements.workerAgeInput.value;
+
+                        saveData();
+                        showMessage('登録情報を更新しました。');
+                        form.reset();
+                        showView('login');
+                    });
+                }
+            }
+        });
+
+        // 登録フォームのsubmitハンドラーを別途定義
+        const handleRegisterSubmit = (e) => {
+            e.preventDefault();
+            const form = e.target;
+            let primaryCompany = elements.primaryCompanySelectRegister.value;
+            if (primaryCompany === 'other') {
+                primaryCompany = elements.primaryCompanyInputRegister.value;
+            }
+            if (!primaryCompany || primaryCompany === '一次会社名を選択') {
+                showMessage('');
+                return;
+            }
+
+            const contractingCompany = form.querySelector('#contracting-company').value;
+            const workerName = form.querySelector('#worker-name').value;
+
+            // 重複チェック
+            const isDuplicate = appData.workers.some(worker => 
+                worker.primaryCompany === primaryCompany &&
+                worker.contractingCompany === contractingCompany &&
+                worker.name === workerName
+            );
+
+            if (isDuplicate) {
+                showMessage('登録済みです。');
+                return;
+            }
+
+            const newWorker = {
+                id: Date.now().toString(),
+                primaryCompany: primaryCompany,
+                contractingCompany: contractingCompany,
+                name: workerName,
+                age: form.querySelector('#worker-age').value,
+            };
+            appData.workers.push(newWorker);
+            saveData();
+            showMessage('新規登録が完了しました。');
+            form.reset();
+            showView('login');
+        };
+        elements.registerForm.addEventListener('submit', handleRegisterSubmit);
+
+    </script>
+</body>
+</html>
